@@ -6,35 +6,12 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 
-
 /**
  * This class represents an Static Taxi Dispatching Problem.
  *
  * @author Hoang Tran
  */
 public class Problem {
-
-	public class Taxi {
-		public int time0;
-		public int location0;
-		
-		public Taxi(int _time0, int _location0) {
-			time0 = _time0;
-			location0 = _location0;
-		}
-	}
-	
-	public class Request {
-		public int time;
-		public int pickup;
-		public int delivery;
-		
-		public Request(int _time, int _pickup, int _delivery) {
-			time = _time;
-			pickup = _pickup;
-			delivery = _delivery;
-		}
-	}
 	
     /***
      * Number of regions
@@ -58,13 +35,15 @@ public class Problem {
      * taxis[region]
      */
     public final Taxi taxis[];
-
+    public final int nTaxis;
+    
     /***
      * Array with the sequence of Taxis 
      * taxis[region]
      */
     public final Request requests[];
-
+    public final int nRequests;
+    
     /**
      * Instantiates a new Problem from a file.
      *
@@ -101,6 +80,7 @@ public class Problem {
         }
         reader.close();
         taxis = taxisList.toArray(new Taxi[taxisList.size()]);
+        nTaxis = taxis.length;
         
     	ArrayList<Request> requestsList = new ArrayList<Request>();
     	reader = Files.newBufferedReader(Paths.get(requests_file));
@@ -115,5 +95,6 @@ public class Problem {
         }
         reader.close();
         requests = requestsList.toArray(new Request[requestsList.size()]);
+        nRequests = requests.length;
     }
 }

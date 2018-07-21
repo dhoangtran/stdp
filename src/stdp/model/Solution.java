@@ -1,5 +1,6 @@
 package stdp.model;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -21,56 +22,28 @@ import java.lang.Math;
  */
 public class Solution {
 
+	class Route {
+		public Taxi taxi;
+		public ArrayList<Request> route;
+		
+		public Route(Taxi _taxi) {
+			taxi = _taxi;
+		}
+	}
+	
 	public final Problem problem;
-	public final int[] dispatch;
-	public final int size;
-	public final int dispatchSize;
-	public double drivingCost;
-	public double balancingCost;
-	public double[] timeBalancingCosts;
-	public double totalCost;
-	private int[][][] MVMapping;
-	private int[][] VMMapping;
-	public int[][] supplies;
-	public double[][] demandSupplyRatio;
-	public int code;
-	//public int[] STPMST;
-	//public double[] ROSTEP;
+	public final Route[] route;
+	public double cost;
+	
 	/**
 	 * Instantiates a new Solution.
 	 *
 	 * @param problem problem considered.
 	 */
-	public Solution(Problem problem) {
-		this.problem = problem;
-		this.size = problem.nTimeHorizons * problem.nRegions * (problem.nRegions - 1) / 2;
-		this.dispatchSize = problem.nRegions * (problem.nRegions - 1) / 2;
-		this.dispatch = new int[size];
-		this.drivingCost = 0;
-		this.balancingCost = 0;
-		this.timeBalancingCosts = new double[problem.nTimeHorizons];
-		this.totalCost = 0;
-		this.MVMapping = new int[problem.nTimeHorizons][problem.nRegions][problem.nRegions];
-		this.VMMapping = new int[size][3];
-		for (int k = 0; k < problem.nTimeHorizons; k++) { 
-			for (int i = 0; i < problem.nRegions - 1; i++) {
-				for (int j = i + 1; j < problem.nRegions; j++) {
-					this.MVMapping[k][i][j] = k * problem.nRegions * (problem.nRegions - 1) / 2 + i * problem.nRegions - i * (i + 1) /2 + j - i - 1;
-					this.VMMapping[this.MVMapping[k][i][j]][0] = k;
-					this.VMMapping[this.MVMapping[k][i][j]][1] = i;
-					this.VMMapping[this.MVMapping[k][i][j]][2] = j;
-				}
-			}
-		}
-		this.supplies = new int[problem.nTimeHorizons][problem.nRegions];
-		this.demandSupplyRatio = new double[problem.nTimeHorizons][problem.nRegions];
-		//this.ROSTEP = new double[size];
-        //this.STPMST = new int[size];
-        //for (int i = 0; i < size; i++) {
-        //	ROSTEP[i] = 0.25;
-        //	STPMST[i] = (int) Math.round(getRange(i) * ROSTEP[i]);
-        //}
-		this.updateTotalCost();
+	
+	public Solution(Problem _problem) {
+		problem = _problem;
+		route = new Route[problem.nTaxis];
 	}
 
 	/**
@@ -80,25 +53,7 @@ public class Solution {
 	 */
 	private Solution(Solution solution) {
 		this.problem = solution.problem;
-		this.size = solution.size;
-		this.dispatchSize = solution.dispatchSize;
-		this.dispatch = Arrays.copyOf(solution.dispatch, size); 
-		this.drivingCost = solution.drivingCost;
-		this.balancingCost = solution.balancingCost;
-		this.timeBalancingCosts = Arrays.copyOf(solution.timeBalancingCosts, problem.nTimeHorizons);
-		this.totalCost = solution.totalCost;
-		this.MVMapping = solution.MVMapping;
-		this.VMMapping = solution.VMMapping;
-		this.supplies = new int[problem.nTimeHorizons][problem.nRegions];
-		for (int k = 0; k < problem.nTimeHorizons; k++) {
-			this.supplies[k] = Arrays.copyOf(solution.supplies[k], problem.nRegions);
-		}
-		this.demandSupplyRatio = new double[problem.nTimeHorizons][problem.nRegions];
-		for (int k = 0; k < problem.nTimeHorizons; k++) {
-			this.demandSupplyRatio[k] = Arrays.copyOf(solution.demandSupplyRatio[k], problem.nRegions);
-		}
-		//this.ROSTEP = Arrays.copyOf(solution.ROSTEP, size);
-        //this.STPMST = Arrays.copyOf(solution.STPMST, size);
+		route = solution.route.clone();
 	}
 
 	/**
@@ -108,223 +63,16 @@ public class Solution {
 		return new Solution(this);
 	}
 
-	/**
-	 * Creates and returns a random neighbor of this solution.
-	 */
-	public Solution getRandomNeighbor(Random random) {
-		int position;
-		int alpha;
-		int num = random.nextInt(3) + 1;
-		do {
-			position = random.nextInt(size);
-			alpha = random.nextInt(2)==0 ? num : -num;
-		} while (!validate(position, alpha));
-		Solution neighbor = new Solution(this);
-		neighbor.dispatch[position] += alpha;
-		neighbor.updateTotalCost();
-		return neighbor;
-	}
 
 	/**
-	 * Do a random move of this solution.
-	 */
-	public void doRandomMove(Random random) {
-		int position;
-		int alpha;
-		boolean valid;
-		do {
-			valid = false;
-			position = random.nextInt(size);
-			int k = VMMapping[position][0];
-			int i = VMMapping[position][1];
-			int j = VMMapping[position][2];
-			int num = random.nextInt(3) + 1;
-			alpha = demandSupplyRatio[k][i] < demandSupplyRatio[k][j] ? num : -num;
-			if (alpha > 0 && supplies[k][i] - alpha >= 0) valid = true;
-			else if (alpha < 0 && supplies[k][j] + alpha >= 0) valid = true;
-		} while (!valid);
-		this.dispatch[position] += alpha;
-		this.updateTotalCost();
-	}
-
-	/**
-	 * Gets the solution driving cost. 
-	 *
-	 * @return the solution driving cost.
-	 */
-	public double getDrivingCost() {
-		return drivingCost;
-	}
-
-	/**
-	 * Gets the solution balancing cost. 
-	 *
-	 * @return the solution balancing cost.
-	 */
-	public double getBalancingCost() {
-		return balancingCost;
-	}
-
-	/**
-	 * Gets the solution total cost. 
-	 *
-	 * @return the solution total cost.
-	 */
-	public double getTotalCost() {
-		return totalCost;
-	}
-
-	/**
-	 * Updates (and returns) the driving cost of the solution.
+	 * Updates (and returns) the cost of the solution.
 	 *
 	 * @return the updated solution cost.
 	 */
-	private double updateDrivingCost() {
-		// compute driving cost
-		drivingCost = 0;
-		for (int d = 0; d < size; d++) {
-			if (dispatch[d] > 0) {
-				drivingCost += dispatch[d] * problem.distances[VMMapping[d][1]][VMMapping[d][2]]; 
-			} else if (dispatch[d] < 0) {
-				drivingCost -= dispatch[d] * problem.distances[VMMapping[d][2]][VMMapping[d][1]];
-			}
-		}
-
-		return drivingCost;
+	public double updateCost() {
+		return cost;
 	}
 	
-	private double updateDrivingCost(int position, int alpha) {
-		// compute driving cost
-		int old = dispatch[position] - alpha;
-		if (old > 0) {
-			drivingCost -= old * problem.distances[VMMapping[position][1]][VMMapping[position][2]]; 
-		} else if (old < 0) {
-			drivingCost += old * problem.distances[VMMapping[position][2]][VMMapping[position][1]];
-		}
-		if (dispatch[position] > 0) {
-			drivingCost += dispatch[position] * problem.distances[VMMapping[position][1]][VMMapping[position][2]]; 
-		} else if (dispatch[position] < 0) {
-			drivingCost -= dispatch[position] * problem.distances[VMMapping[position][2]][VMMapping[position][1]];
-		}
-		
-		return drivingCost;
-	}
-
-
-	/**
-	 * Updates (and returns) the balancing cost of the solution.
-	 *
-	 * @return the updated solution cost.
-	 */
-	private double updateBalancingCost() {
-		int[] supply = Arrays.copyOf(problem.initialSupply, problem.nRegions);
-		// update dispatching supply
-		for (int k = 0; k < problem.nTimeHorizons; k++) {
-			System.arraycopy(supply, 0, supplies[k], 0, problem.nRegions);
-			// update supply after dispatch
-			for (int d = 0; d < dispatchSize; d++) {
-				if (dispatch[k * dispatchSize + d] != 0) {
-					supply[VMMapping[d][1]] -= dispatch[k * dispatchSize + d];
-					supply[VMMapping[d][2]] += dispatch[k * dispatchSize + d];
-				}
-			}
-			// update demand supply ratio
-			timeBalancingCosts[k] = 0;
-			for (int i = 0; i < problem.nRegions; i++) {
-				if (supply[i] > 0) {
-					demandSupplyRatio[k][i] = problem.predictedDemand[k][i] * 1.0 / supply[i];
-				} else {
-					demandSupplyRatio[k][i] = problem.predictedDemand[k][i] * 1.0 / 1;
-				}
-				timeBalancingCosts[k] += Math.abs(demandSupplyRatio[k][i] - problem.getGlobalDemandSupplyRatio(k));
-			}
-			
-			// update supply after mobility
-			double[] temp = new double[problem.nRegions];
-			for (int ii = 0; ii < problem.nRegions; ii++) {
-				for (int jj = 0; jj < problem.nRegions; jj++) {
-					temp[ii] += supply[jj] * problem.mobilityPattern[jj][ii];
-				}
-			}
-			for (int ii = 0; ii < problem.nRegions; ii++) {
-				supply[ii] = (int) Math.round(temp[ii]);
-			}
-		}
-		// compute cost
-		balancingCost = 0;
-		for (int k = 0; k < problem.nTimeHorizons; k++) {
-			balancingCost += timeBalancingCosts[k];
-		}
-		return balancingCost;
-	}
-	
-	private double updateBalancingCost(int position, int alpha) {
-		// compute balancing cost
-		int t = VMMapping[position][0];
-		
-		int[] supply = Arrays.copyOf(supplies[t], problem.nRegions);
-		// update dispatching supply
-		for (int k = t; k < problem.nTimeHorizons; k++) {
-			System.arraycopy(supply, 0, supplies[k], 0, problem.nRegions);
-			// update supply after dispatch
-			for (int d = 0; d < dispatchSize; d++) {
-				if (dispatch[k * dispatchSize + d] != 0) {
-					supply[VMMapping[d][1]] -= dispatch[k * dispatchSize + d];
-					supply[VMMapping[d][2]] += dispatch[k * dispatchSize + d];
-				}
-			}
-			// update demand supply ratio
-			timeBalancingCosts[k] = 0;
-			for (int i = 0; i < problem.nRegions; i++) {
-				if (supply[i] > 0) {
-					demandSupplyRatio[k][i] = problem.predictedDemand[k][i] * 1.0 / supply[i];
-				} else {
-					demandSupplyRatio[k][i] = problem.predictedDemand[k][i] * 1.0 / 1;
-				}
-				timeBalancingCosts[k] += Math.abs(demandSupplyRatio[k][i] - problem.getGlobalDemandSupplyRatio(k));
-			}
-			// update supply after mobility
-			double[] temp = new double[problem.nRegions];
-			for (int ii = 0; ii < problem.nRegions; ii++) {
-				for (int jj = 0; jj < problem.nRegions; jj++) {
-					temp[ii] += supply[jj] * problem.mobilityPattern[jj][ii];
-				}
-			}
-			for (int ii = 0; ii < problem.nRegions; ii++) {
-				supply[ii] = (int) Math.round(temp[ii]);
-			}
-		}
-		// compute cost
-		balancingCost = 0;
-		for (int k = 0; k < problem.nTimeHorizons; k++) {
-			balancingCost += timeBalancingCosts[k];
-		}
-		return balancingCost;
-	}
-
-	/**
-	 * Updates (and returns) the total cost of the solution.
-	 *
-	 * @return the updated solution cost.
-	 */
-	public double updateTotalCost() {
-		updateDrivingCost();
-		updateBalancingCost();
-		totalCost = drivingCost + problem.weightFactor * balancingCost;
-		return totalCost;
-	}
-	
-	public double updateTotalCost(int position, int alpha) {
-		updateDrivingCost(position, alpha);
-		updateBalancingCost(position, alpha);
-		totalCost = drivingCost + problem.weightFactor * balancingCost;
-		return totalCost;
-	}
-
-	public void updateTotalCost(double totalCost) {
-		this.totalCost = totalCost;
-		
-	}
 	/**
 	 * Validates the solution.
 	 *
